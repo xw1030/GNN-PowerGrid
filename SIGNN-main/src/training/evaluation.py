@@ -16,14 +16,14 @@ from sklearn.metrics import (
     precision_recall_curve,
     average_precision_score,
 )
-import matplotlib.pyplot as plt
-import seaborn as sns
+# Lazy import: matplotlib/seaborn only when plotting (avoids broken mpl on import)
 from typing import Dict, List, Tuple, Optional, Any
 from collections import defaultdict
 import pandas as pd
 from pathlib import Path
 
 from .metrics import calculate_classification_metrics
+from ..data.subgraph import pad_center_marker
 
 
 class ModelEvaluator:
@@ -81,8 +81,9 @@ class ModelEvaluator:
                 data.edge_attr = data.edge_attr.to(self.device)
                 data.y = data.y.to(self.device)
 
-                # Forward pass
-                logits = self.model(data.x, data.edge_index, data.edge_attr)
+                # Forward pass (pad x to match model input: node_features + 2 center marker)
+                x_in = pad_center_marker(data.x, device=self.device)
+                logits = self.model(x_in, data.edge_index, data.edge_attr)
 
                 if logits.size(0) == 0:
                     continue
@@ -289,6 +290,10 @@ class ModelEvaluator:
             "num_grids_evaluated": len(per_grid),
             "num_scenarios_evaluated": len(per_scenario),
         }
+        if "mcc" in overall["metrics"] and overall["metrics"]["mcc"] is not None:
+            mcc_val = overall["metrics"]["mcc"]
+            if not (isinstance(mcc_val, float) and np.isnan(mcc_val)):
+                summary["overall_mcc"] = float(mcc_val)
 
         if per_grid:
             grid_accuracies = [metrics["accuracy"] for metrics in per_grid.values()]
@@ -300,6 +305,15 @@ class ModelEvaluator:
                     "grid_accuracy_max": np.max(grid_accuracies),
                 }
             )
+            grid_mccs = [
+                m.get("mcc") for m in per_grid.values()
+                if m.get("mcc") is not None and not (isinstance(m.get("mcc"), float) and np.isnan(m.get("mcc")))
+            ]
+            if grid_mccs:
+                summary["grid_mcc_mean"] = float(np.mean(grid_mccs))
+                summary["grid_mcc_min"] = float(np.min(grid_mccs))
+                summary["grid_mcc_max"] = float(np.max(grid_mccs))
+                summary["grid_mcc_count"] = len(grid_mccs)
 
         if per_scenario:
             scenario_accuracies = [
@@ -313,6 +327,15 @@ class ModelEvaluator:
                     "scenario_accuracy_max": np.max(scenario_accuracies),
                 }
             )
+            scenario_mccs = [
+                m.get("mcc") for m in per_scenario.values()
+                if m.get("mcc") is not None and not (isinstance(m.get("mcc"), float) and np.isnan(m.get("mcc")))
+            ]
+            if scenario_mccs:
+                summary["scenario_mcc_mean"] = float(np.mean(scenario_mccs))
+                summary["scenario_mcc_min"] = float(np.min(scenario_mccs))
+                summary["scenario_mcc_max"] = float(np.max(scenario_mccs))
+                summary["scenario_mcc_count"] = len(scenario_mccs)
 
         return summary
 
@@ -360,6 +383,9 @@ class ModelEvaluator:
         self, labels: List[int], predictions: List[int], save_path: Path
     ):
         """Plot confusion matrix."""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+
         cm = confusion_matrix(labels, predictions)
 
         plt.figure(figsize=(8, 6))
@@ -382,6 +408,8 @@ class ModelEvaluator:
         self, per_grid: Dict[int, Dict[str, Any]], save_path: Path
     ):
         """Plot per-grid performance."""
+        import matplotlib.pyplot as plt
+
         grid_ids = list(per_grid.keys())
         accuracies = [per_grid[gid]["accuracy"] for gid in grid_ids]
         f1_scores = [per_grid[gid]["f1"] for gid in grid_ids]
@@ -410,6 +438,8 @@ class ModelEvaluator:
         self, per_scenario: Dict[str, Dict[str, Any]], save_path: Path
     ):
         """Plot per-scenario performance."""
+        import matplotlib.pyplot as plt
+
         scenarios = list(per_scenario.keys())
         accuracies = [per_scenario[scenario]["accuracy"] for scenario in scenarios]
         f1_scores = [per_scenario[scenario]["f1"] for scenario in scenarios]
@@ -438,6 +468,8 @@ class ModelEvaluator:
         self, labels: List[int], probabilities: np.ndarray, save_path: Path
     ):
         """Plot ROC curve."""
+        import matplotlib.pyplot as plt
+
         fpr, tpr, _ = roc_curve(labels, probabilities)
         auc = roc_auc_score(labels, probabilities)
 

@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import logging
 
 from ..models.losses import create_loss_function
+from ..data.subgraph import ego_nets_plus_subgraphs, pad_center_marker
 from .evaluation import ModelEvaluator
 from .utils import EarlyStopping, ModelCheckpoint, TrainingLogger
 from .metrics import calculate_classification_metrics
@@ -75,6 +76,12 @@ class TrainingConfig:
     # Class imbalance handling
     use_class_weights: bool = True
     oversample_minority: bool = False
+
+    # Subgraph (ESAN-style ego_nets_plus)
+    use_subgraph: bool = False
+    subgraph_num_hops: int = 2
+    subgraph_max_centers_per_sample: Optional[int] = None  # None = all nodes; set to limit
+    subgraph_chunk_size: int = 500  # subgraphs per backward (gradient accumulation), larger = more GPU use
 
     def __post_init__(self):
         """Validate configuration."""
@@ -403,7 +410,12 @@ class Trainer:
 
         # Load best model if available
         if self.checkpoint is not None and self.checkpoint.best_model_path.exists():
-            self.model.load_state_dict(torch.load(self.checkpoint.best_model_path))
+            checkpoint = torch.load(self.checkpoint.best_model_path, map_location=self.device)
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                self.model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                # Handle case where checkpoint is just the state dict
+                self.model.load_state_dict(checkpoint)
             self.logger.info("Loaded best model weights")
 
     def _save_checkpoint(self, epoch: int):
@@ -529,27 +541,59 @@ class MultiGridTrainer(Trainer):
 
             self.optimizer.zero_grad()
 
-            # Forward pass
-            logits = self.model(data.x, data.edge_index, data.edge_attr)
-            loss = criterion(logits, data.y)
-
-            # Backward pass
-            loss.backward()
-
-            if self.config.gradient_clip_val is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    self.model.parameters(), self.config.gradient_clip_val
+            if self.config.use_subgraph:
+                subgraphs = ego_nets_plus_subgraphs(
+                    data,
+                    num_hops=self.config.subgraph_num_hops,
+                    max_centers=self.config.subgraph_max_centers_per_sample,
                 )
+                if not subgraphs:
+                    continue
+                self.optimizer.zero_grad()
+                chunk_size = max(1, self.config.subgraph_chunk_size)
+                N = data.num_nodes
+                for chunk_start in range(0, len(subgraphs), chunk_size):
+                    chunk = subgraphs[chunk_start : chunk_start + chunk_size]
+                    # 批成一张图：同结构子图拼成一大图，一次前向提高 GPU 利用率
+                    xs, eis, eas, ys = [], [], [], []
+                    for x_plus, ei, ea, y_sub in chunk:
+                        if y_sub.size(0) == 0:
+                            continue
+                        xs.append(x_plus)
+                        eis.append(ei)
+                        eas.append(ea)
+                        ys.append(y_sub)
+                    if not xs:
+                        continue
+                    # 大图：节点 [0..N-1], [N..2N-1], ... ；边索引按子图偏移
+                    batch_x = torch.cat(xs, dim=0).to(self.device)
+                    batch_ei = torch.cat([eis[i] + i * N for i in range(len(xs))], dim=1).to(self.device)
+                    batch_ea = torch.cat(eas, dim=0).to(self.device)
+                    batch_y = torch.cat(ys, dim=0).to(self.device)
+                    logits = self.model(batch_x, batch_ei, batch_ea)
+                    chunk_loss = criterion(logits, batch_y)
+                    total_correct += (logits.argmax(dim=1) == batch_y).sum().item()
+                    total_samples += batch_y.size(0)
+                    total_loss += chunk_loss.item()
+                    chunk_loss.backward()
+                if self.config.gradient_clip_val is not None:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.gradient_clip_val)
+                self.optimizer.step()
+            else:
+                x_in = pad_center_marker(data.x, device=self.device)
+                logits = self.model(x_in, data.edge_index, data.edge_attr)
+                loss = criterion(logits, data.y)
+                loss.backward()
+                if self.config.gradient_clip_val is not None:
+                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.config.gradient_clip_val)
+                self.optimizer.step()
+                total_loss += loss.item()
+                pred = logits.argmax(dim=1)
+                total_correct += (pred == data.y).sum().item()
+                total_samples += data.y.size(0)
 
-            self.optimizer.step()
-
-            # Statistics
-            total_loss += loss.item()
-            pred = logits.argmax(dim=1)
-            total_correct += (pred == data.y).sum().item()
-            total_samples += data.y.size(0)
-
-        avg_loss = total_loss / len(self.train_samples)
+        n_batches = max(1, len(self.train_samples))
+        avg_loss = total_loss / n_batches
         avg_acc = total_correct / total_samples if total_samples > 0 else 0.0
 
         return avg_loss, avg_acc
@@ -574,7 +618,8 @@ class MultiGridTrainer(Trainer):
                 data.edge_attr = data.edge_attr.to(self.device)
                 data.y = data.y.to(self.device)
 
-                logits = self.model(data.x, data.edge_index, data.edge_attr)
+                x_in = pad_center_marker(data.x, device=self.device)
+                logits = self.model(x_in, data.edge_index, data.edge_attr)
                 loss = criterion(logits, data.y)
 
                 total_loss += loss.item()
@@ -688,7 +733,12 @@ class MultiGridTrainer(Trainer):
 
         # Load best model if available
         if self.checkpoint and self.checkpoint.best_model_path.exists():
-            self.model.load_state_dict(torch.load(self.checkpoint.best_model_path))
+            checkpoint = torch.load(self.checkpoint.best_model_path, map_location=self.device)
+            if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+                self.model.load_state_dict(checkpoint["model_state_dict"])
+            else:
+                # Handle case where checkpoint is just the state dict
+                self.model.load_state_dict(checkpoint)
 
         # Use dummy criterion for evaluation
         criterion = nn.CrossEntropyLoss()
@@ -716,5 +766,29 @@ class MultiGridTrainer(Trainer):
         self.logger.info(f"  F1 Score: {test_metrics['f1']:.4f}")
         self.logger.info(f"  Precision: {test_metrics['precision']:.4f}")
         self.logger.info(f"  Recall: {test_metrics['recall']:.4f}")
+        # INSERT_YOUR_CODE
+        # Calculate Matthews Correlation Coefficient (MCC) for the test set
+        from sklearn.metrics import matthews_corrcoef
 
+        # Aggregate predictions and targets for MCC
+        all_predictions = []
+        all_targets = []
+        with torch.no_grad():
+            for sample_idx in self.test_samples:
+                data = self.dataset[sample_idx]
+                if data.edge_index.shape[1] == 0:
+                    continue
+                data.x = pad_center_marker(data.x, device=self.device)
+                preds = self.model(data.x.to(self.device), data.edge_index.to(self.device), data.edge_attr.to(self.device))
+                pred_labels = preds.argmax(dim=1).cpu().numpy()
+                all_predictions.extend(pred_labels)
+                all_targets.extend(data.y.cpu().numpy())
+
+        if len(all_predictions) > 0:
+            mcc = matthews_corrcoef(all_targets, all_predictions)
+            final_results["mcc"] = mcc
+            self.logger.info(f"  MCC: {mcc:.4f}")
+        else:
+            final_results["mcc"] = None
+            self.logger.info("  MCC: N/A (no predictions available)")
         return final_results

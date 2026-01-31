@@ -5,8 +5,7 @@ Author: Charlotte Cambier van Nooten
 
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-import seaborn as sns
+# matplotlib/seaborn imported only inside plot_* functions (avoids broken mpl on load)
 from sklearn.metrics import (
     accuracy_score,
     precision_recall_fscore_support,
@@ -340,6 +339,8 @@ def plot_training_history(
         save_path: Path to save the plot (optional)
         title: Plot title
     """
+    import matplotlib.pyplot as plt
+
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
 
     epochs = range(1, len(train_losses) + 1)
@@ -393,6 +394,9 @@ def plot_confusion_matrix(
         title: Plot title
         figsize: Figure size
     """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+
     # Get confusion matrix
     norm_mode = "true" if normalize else None
     cm, labels = compute_confusion_matrix(
@@ -448,6 +452,8 @@ def plot_roc_curve(
     Returns:
         AUC score
     """
+    import matplotlib.pyplot as plt
+
     # Convert to numpy arrays
     y_true = np.array(y_true)
     y_prob = np.array(y_prob)
@@ -503,6 +509,8 @@ def plot_precision_recall_curve(
     Returns:
         Average precision score
     """
+    import matplotlib.pyplot as plt
+
     # Convert to numpy arrays
     y_true = np.array(y_true)
     y_prob = np.array(y_prob)
