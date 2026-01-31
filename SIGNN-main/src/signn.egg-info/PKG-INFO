@@ -1,0 +1,70 @@
+Metadata-Version: 2.4
+Name: signn
+Version: 1.0.0
+Summary: Symmetry Isomorphism Graph Neural Networks for Power Grid n-1 Contingency Classification
+Home-page: https://github.com/charlottecvn/SIGNN
+Author: Charlotte Cambier van Nooten
+Project-URL: Bug Reports, https://github.com/charlottecvn/SIGNN/issues
+Project-URL: Source, https://github.com/charlottecvn/SIGNN
+Project-URL: Documentation, https://signn.readthedocs.io/
+Keywords: graph neural networks,power systems,contingency analysis,n-1 security,machine learning,electrical engineering
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Science/Research
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: torch>=2.0.0
+Requires-Dist: torch-geometric>=2.3.0
+Requires-Dist: torch-scatter>=2.1.0
+Requires-Dist: torch-sparse>=0.6.15
+Requires-Dist: torch-cluster>=1.6.0
+Requires-Dist: torch-spline-conv>=1.2.1
+Requires-Dist: pandas>=1.5.0
+Requires-Dist: numpy>=1.21.0
+Requires-Dist: scikit-learn>=1.0.0
+Requires-Dist: matplotlib>=3.5.0
+Requires-Dist: seaborn>=0.11.0
+Requires-Dist: tqdm>=4.64.0
+Requires-Dist: pytest>=7.0.0
+Requires-Dist: jupyter>=1.0.0
+Requires-Dist: ipykernel>=6.0.0
+Requires-Dist: PyYAML>=6.0
+Provides-Extra: full
+Requires-Dist: torch-geometric>=2.3.0; extra == "full"
+Requires-Dist: torch-scatter>=2.1.0; extra == "full"
+Requires-Dist: torch-sparse>=0.6.15; extra == "full"
+Requires-Dist: torch-cluster>=1.6.0; extra == "full"
+Requires-Dist: torch-spline-conv>=1.2.1; extra == "full"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0.0; extra == "dev"
+Requires-Dist: black>=22.0.0; extra == "dev"
+Requires-Dist: isort>=5.10.0; extra == "dev"
+Requires-Dist: flake8>=5.0.0; extra == "dev"
+Requires-Dist: mypy>=0.991; extra == "dev"
+Provides-Extra: docs
+Requires-Dist: sphinx>=5.0.0; extra == "docs"
+Requires-Dist: sphinx-rtd-theme>=1.0.0; extra == "docs"
+Requires-Dist: nbsphinx>=0.8.0; extra == "docs"
+Dynamic: author
+Dynamic: classifier
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: keywords
+Dynamic: license-file
+Dynamic: project-url
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# SIGNN
+Symmetry Isomorphism Graph Neural Network

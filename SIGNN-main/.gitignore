@@ -1,0 +1,10 @@
+output
+*.pyc
+*.DS_Store
+GRID_SIZE_CLASSIFICATION.md
+.zed
+docs/
+tests/
+venv/
+examples/
+dataset/

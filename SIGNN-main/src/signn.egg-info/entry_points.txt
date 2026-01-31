@@ -1,0 +1,4 @@
+[console_scripts]
+signn-analyze = signn.cli:analyze
+signn-eval = signn.cli:evaluate
+signn-train = signn.cli:train
